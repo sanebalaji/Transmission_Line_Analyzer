@@ -1,0 +1,769 @@
+clc;
+clear;
+close all;
+
+%% =========================================================
+%  TRANSMISSION LINE ANALYZER
+%  Step 1: Analytical Transmission-Line Calculations
+% ==========================================================
+
+%% INPUT PARAMETERS
+
+% Frequency
+f = 1e9;                 % Hz
+
+% Distributed parameters
+R = 0.5;                 % Ohm/m
+L = 0.2e-6;              % H/m
+G = 0;                   % S/m
+C = 100e-12;             % F/m = 100 pF/m
+
+% Transmission line length
+line_length = 100;       % m
+
+% Load impedance
+ZL = 100;                % Ohm
+
+% Incident voltage amplitude
+Vplus = 1;               % V
+
+%% =========================================================
+% 1. ANGULAR FREQUENCY
+% ==========================================================
+
+omega = 2*pi*f;
+
+%% =========================================================
+% 2. PROPAGATION CONSTANT
+% gamma = sqrt((R + j*w*L)*(G + j*w*C))
+% gamma = alpha + j*beta
+% ==========================================================
+
+gamma = sqrt((R + 1i*omega*L) * ...
+             (G + 1i*omega*C));
+
+alpha = real(gamma);
+beta  = imag(gamma);
+
+%% =========================================================
+% 3. CHARACTERISTIC IMPEDANCE
+% Z0 = sqrt((R+j*w*L)/(G+j*w*C))
+% ==========================================================
+
+Z0 = sqrt((R + 1i*omega*L) / ...
+          (G + 1i*omega*C));
+
+%% =========================================================
+% 4. WAVELENGTH
+% beta = 2*pi/lambda
+% ==========================================================
+
+if abs(beta) > 1e-12
+    lambda = 2*pi/beta;
+else
+    lambda = Inf;
+end
+
+%% =========================================================
+% 5. LOAD REFLECTION COEFFICIENT
+% Gamma_L = (ZL-Z0)/(ZL+Z0)
+% ==========================================================
+
+Gamma_L = (ZL - Z0) / (ZL + Z0);
+
+Gamma_magnitude = abs(Gamma_L);
+Gamma_phase = angle(Gamma_L);
+
+%% =========================================================
+% 6. REFLECTION / TRANSMISSION PERFORMANCE
+% ==========================================================
+
+% VSWR
+if Gamma_magnitude < 1
+    VSWR = (1 + Gamma_magnitude) / ...
+        (1 - Gamma_magnitude);
+else
+    VSWR = Inf;
+end
+
+% Return Loss
+if Gamma_magnitude > 0
+    Return_Loss_dB = -20*log10(Gamma_magnitude);
+else
+    Return_Loss_dB = Inf;
+end
+
+% Voltage transmission coefficient
+Tau_V = 1 + Gamma_L;
+%% =========================================================
+% 6. INPUT IMPEDANCE
+%
+% Zin = Z0 * (ZL + Z0*tanh(gamma*l)) /
+%             (Z0 + ZL*tanh(gamma*l))
+% ==========================================================
+
+Zin = Z0 * ...
+      (ZL + Z0*tanh(gamma*line_length)) / ...
+      (Z0 + ZL*tanh(gamma*line_length));
+
+%% =========================================================
+% 7. REFLECTED VOLTAGE
+% Vminus = Gamma * Vplus
+% ==========================================================
+
+Vminus = Gamma_L * Vplus;
+
+%% =========================================================
+% 7. LOAD VOLTAGE AND CURRENT
+% ==========================================================
+
+% Total voltage at load
+VL = Vplus + Vminus;
+
+% Load current
+IL = VL / ZL;
+
+%% =========================================================
+% 8. INPUT VOLTAGE AND CURRENT
+% ==========================================================
+
+% Coordinate convention:
+% z = 0 at load
+% positive z points toward source/input
+
+% Incident wave at input
+Vplus_in = Vplus * exp(gamma * line_length);
+
+% Reflected wave at input
+Vminus_in = Vminus * exp(-gamma * line_length);
+
+% Total input voltage
+Vin = Vplus_in + Vminus_in;
+
+% Total input current
+Iin = Vplus_in/Z0 - Vminus_in/Z0;
+
+%% =========================================================
+% 8A. INPUT IMPEDANCE CONSISTENCY CHECK
+% ==========================================================
+
+Zin_check = Vin / Iin;
+
+Zin_error = abs(Zin - Zin_check);
+
+fprintf('\n');
+fprintf('INPUT IMPEDANCE CHECK\n');
+fprintf('Calculated Zin        = %.6f + j%.6f Ohm\n', ...
+    real(Zin), imag(Zin));
+
+fprintf('Vin/Iin               = %.6f + j%.6f Ohm\n', ...
+    real(Zin_check), imag(Zin_check));
+
+fprintf('Absolute error        = %.6e Ohm\n', Zin_error);
+
+%% =========================================================
+% 8B. POWER CALCULATIONS
+% ==========================================================
+
+% Incident power
+P_incident = 0.5 * real( ...
+    Vplus * conj(Vplus/Z0) );
+
+% Reflected power magnitude
+% Use the magnitude of the backward-wave power
+P_reflected = 0.5 * real( ...
+    Vminus * conj(Vminus/Z0) );
+
+% Load power
+P_load = 0.5 * real(VL * conj(IL));
+
+% Power reflection coefficient
+Power_reflection_coefficient = ...
+    P_reflected / P_incident;
+
+% Power transmission coefficient
+Power_transmission_coefficient = ...
+    P_load / P_incident;
+
+%% =========================================================
+% 8C. LINE ATTENUATION AND POWER LOSS
+% ==========================================================
+
+% Voltage attenuation factor over the complete line
+Voltage_Attenuation_Factor = exp(-alpha * line_length);
+
+% Attenuation in nepers
+Attenuation_Np = alpha * line_length;
+
+% Attenuation in dB
+Attenuation_dB = 8.686 * Attenuation_Np;
+
+% Power attenuation factor
+Power_Attenuation_Factor = exp(-2 * alpha * line_length);
+
+fprintf('\n--------------------------------------------\n');
+fprintf('LINE ATTENUATION\n');
+fprintf('--------------------------------------------\n');
+
+fprintf('Voltage attenuation factor = %.6f\n', ...
+    Voltage_Attenuation_Factor);
+
+fprintf('Attenuation                = %.6f Np\n', ...
+    Attenuation_Np);
+
+fprintf('Attenuation                = %.6f dB\n', ...
+    Attenuation_dB);
+
+fprintf('Power attenuation factor  = %.6f\n', ...
+    Power_Attenuation_Factor);
+%% =========================================================
+% 8. DISPLAY RESULTS
+% ==========================================================
+
+fprintf('\n============================================\n');
+fprintf('       TRANSMISSION LINE ANALYSIS\n');
+fprintf('============================================\n');
+
+fprintf('Frequency              = %.4e Hz\n', f);
+fprintf('R                      = %.4e Ohm/m\n', R);
+fprintf('L                      = %.4e H/m\n', L);
+fprintf('G                      = %.4e S/m\n', G);
+fprintf('C                      = %.4e F/m\n', C);
+fprintf('Line Length             = %.4f m\n', line_length);
+fprintf('Load Impedance ZL       = %.4f + j%.4f Ohm\n', ...
+        real(ZL), imag(ZL));
+
+fprintf('\n--------------------------------------------\n');
+fprintf('CALCULATED PARAMETERS\n');
+fprintf('--------------------------------------------\n');
+
+fprintf('Angular frequency w     = %.4e rad/s\n', omega);
+
+fprintf('Propagation constant g  = %.6f + j%.6f /m\n', ...
+        real(gamma), imag(gamma));
+
+fprintf('Attenuation constant a  = %.6f Np/m\n', alpha);
+fprintf('Phase constant b        = %.6f rad/m\n', beta);
+
+fprintf('Wavelength              = %.6f m\n', lambda);
+
+fprintf('Characteristic Z0       = %.6f + j%.6f Ohm\n', ...
+        real(Z0), imag(Z0));
+
+fprintf('Reflection coefficient  = %.6f + j%.6f\n', ...
+        real(Gamma_L), imag(Gamma_L));
+
+fprintf('|Gamma|                 = %.6f\n', Gamma_magnitude);
+
+fprintf('Phase of Gamma           = %.6f degrees\n', ...
+        rad2deg(Gamma_phase));
+
+fprintf('Input impedance Zin      = %.6f + j%.6f Ohm\n', ...
+        real(Zin), imag(Zin));
+
+fprintf('Reflected voltage V-     = %.6f + j%.6f V\n', ...
+        real(Vminus), imag(Vminus));
+
+fprintf('============================================\n');
+
+
+%% =========================================================
+% 9. WAVE CALCULATIONS
+% ==========================================================
+
+% Number of spatial samples
+N = 10000;
+
+% Full transmission-line distance
+z = linspace(0, line_length, N);
+
+% Incident voltage wave
+V_forward = Vplus .* exp(gamma .* z);
+
+% Reflected voltage wave
+V_reflected = Vminus .* exp(-gamma .* z);
+
+% Total voltage
+V_total = V_forward + V_reflected;
+
+% Incident current wave
+I_forward = V_forward ./ Z0;
+
+% Reflected current wave
+I_reflected = -V_reflected ./ Z0;
+
+% Total current
+I_total = I_forward + I_reflected;
+
+
+%% =========================================================
+% 10. STANDING-WAVE PARAMETERS
+% ==========================================================
+
+V_magnitude = abs(V_total);
+I_magnitude = abs(I_total);
+
+% Voltage extrema
+V_max = max(V_magnitude);
+V_min = min(V_magnitude);
+
+% Current extrema
+I_max = max(I_magnitude);
+I_min = min(I_magnitude);
+
+% VSWR calculated from waveform
+VSWR_voltage_waveform = V_max / V_min;
+
+% Current standing-wave ratio
+VSWR_current_waveform = I_max / I_min;
+
+fprintf('\n');
+fprintf('--------------------------------------------\n');
+fprintf('STANDING-WAVE PARAMETERS\n');
+fprintf('--------------------------------------------\n');
+
+fprintf('Vmax = %.6f V\n', V_max);
+fprintf('Vmin = %.6f V\n', V_min);
+
+fprintf('VSWR from voltage waveform = %.6f\n', ...
+    VSWR_voltage_waveform);
+
+fprintf('\n');
+
+fprintf('Imax = %.6e A\n', I_max);
+fprintf('Imin = %.6e A\n', I_min);
+
+fprintf('VSWR from current waveform = %.6f\n', ...
+    VSWR_current_waveform);
+
+
+%% =========================================================
+% 11. VOLTAGE WAVES - FULL LINE
+% ==========================================================
+
+figure;
+
+plot(z, real(V_forward), 'LineWidth', 1.5);
+hold on;
+
+plot(z, real(V_reflected), 'LineWidth', 1.5);
+
+plot(z, real(V_total), 'LineWidth', 2);
+
+grid on;
+
+xlabel('Distance z (m)');
+ylabel('Voltage (V)');
+
+title('Transmission Line Voltage Waves');
+
+legend('Incident Wave', ...
+       'Reflected Wave', ...
+       'Total Voltage', ...
+       'Location', 'best');
+
+hold off;
+
+
+%% =========================================================
+% 12. CURRENT WAVES - FULL LINE
+% ==========================================================
+
+figure;
+
+plot(z, real(I_forward), 'LineWidth', 1.5);
+hold on;
+
+plot(z, real(I_reflected), 'LineWidth', 1.5);
+
+plot(z, real(I_total), 'LineWidth', 2);
+
+grid on;
+
+xlabel('Distance z (m)');
+ylabel('Current (A)');
+
+title('Transmission Line Current Waves');
+
+legend('Incident Current', ...
+       'Reflected Current', ...
+       'Total Current', ...
+       'Location', 'best');
+
+hold off;
+
+
+%% =========================================================
+% 13. VOLTAGE MAGNITUDE
+% ==========================================================
+
+figure;
+
+plot(z, V_magnitude, 'LineWidth', 2);
+
+grid on;
+
+xlabel('Distance z (m)');
+ylabel('|V(z)| (V)');
+
+title('Voltage Magnitude Along Transmission Line');
+
+hold on;
+
+yline(V_max, '--', 'V_{max}');
+yline(V_min, '--', 'V_{min}');
+
+hold off;
+
+
+%% =========================================================
+% 14. CURRENT MAGNITUDE
+% ==========================================================
+
+figure;
+
+plot(z, I_magnitude, 'LineWidth', 2);
+
+grid on;
+
+xlabel('Distance z (m)');
+ylabel('|I(z)| (A)');
+
+title('Current Magnitude Along Transmission Line');
+
+hold on;
+
+yline(I_max, '--', 'I_{max}');
+yline(I_min, '--', 'I_{min}');
+
+hold off;
+
+
+%% =========================================================
+% 15. FIRST FIVE WAVELENGTHS
+% ==========================================================
+
+z_zoom = linspace(0, 5*lambda, 2000);
+
+% Voltage waves in zoom region
+V_forward_zoom = Vplus .* exp(gamma .* z_zoom);
+
+V_reflected_zoom = Vminus .* exp(-gamma .* z_zoom);
+
+V_total_zoom = V_forward_zoom + V_reflected_zoom;
+
+% Current waves in zoom region
+I_forward_zoom = V_forward_zoom ./ Z0;
+
+I_reflected_zoom = -V_reflected_zoom ./ Z0;
+
+I_total_zoom = I_forward_zoom + I_reflected_zoom;
+
+
+%% =========================================================
+% 16. VOLTAGE WAVES - FIRST FIVE WAVELENGTHS
+% ==========================================================
+
+figure;
+
+plot(z_zoom, real(V_forward_zoom), 'LineWidth', 1.5);
+hold on;
+
+plot(z_zoom, real(V_reflected_zoom), 'LineWidth', 1.5);
+
+plot(z_zoom, real(V_total_zoom), 'LineWidth', 2);
+
+grid on;
+
+xlabel('Distance z (m)');
+ylabel('Voltage (V)');
+
+title('Voltage Waves Over First Five Wavelengths');
+
+legend('Incident Wave', ...
+       'Reflected Wave', ...
+       'Total Voltage', ...
+       'Location', 'best');
+
+hold off;
+
+
+%% =========================================================
+% 17. CURRENT WAVES - FIRST FIVE WAVELENGTHS
+% ==========================================================
+
+figure;
+
+plot(z_zoom, real(I_forward_zoom), 'LineWidth', 1.5);
+hold on;
+
+plot(z_zoom, real(I_reflected_zoom), 'LineWidth', 1.5);
+
+plot(z_zoom, real(I_total_zoom), 'LineWidth', 2);
+
+grid on;
+
+xlabel('Distance z (m)');
+ylabel('Current (A)');
+
+title('Current Waves Over First Five Wavelengths');
+
+legend('Forward Current', ...
+       'Reflected Current', ...
+       'Total Current', ...
+       'Location', 'best');
+
+hold off;
+
+
+%% =========================================================
+% 18. STANDING-WAVE VOLTAGE
+% ==========================================================
+
+figure;
+
+plot(z_zoom, abs(V_total_zoom), 'LineWidth', 2);
+
+grid on;
+
+xlabel('Distance z (m)');
+ylabel('|V(z)| (V)');
+
+title('Standing-Wave Voltage Pattern');
+
+
+%% =========================================================
+% 19. STANDING-WAVE CURRENT
+% ==========================================================
+
+figure;
+
+plot(z_zoom, abs(I_total_zoom), 'LineWidth', 2);
+
+grid on;
+
+xlabel('Distance z (m)');
+ylabel('|I(z)| (A)');
+
+title('Standing-Wave Current Pattern');
+
+
+%% =========================================================
+% 20. TIME-DOMAIN VOLTAGE
+% ==========================================================
+
+T = 1/f;
+
+t1 = 0;
+t2 = T/4;
+
+v_t1 = real(V_total_zoom .* exp(1i*omega*t1));
+
+v_t2 = real(V_total_zoom .* exp(1i*omega*t2));
+
+figure;
+
+plot(z_zoom, v_t1, 'LineWidth', 2);
+hold on;
+
+plot(z_zoom, v_t2, 'LineWidth', 2);
+
+grid on;
+
+xlabel('Distance z (m)');
+ylabel('Instantaneous Voltage (V)');
+
+title('Time-Domain Transmission-Line Voltage');
+
+legend('t = 0', ...
+       't = T/4', ...
+       'Location', 'best');
+
+hold off;
+
+
+%% =========================================================
+% 21. VERIFICATION SUMMARY
+% ==========================================================
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('        VERIFICATION SUMMARY\n');
+fprintf('============================================\n');
+
+fprintf('Input values used for verification:\n');
+
+fprintf('f  = %.4e Hz\n', f);
+fprintf('R  = %.4e Ohm/m\n', R);
+fprintf('L  = %.4e H/m\n', L);
+fprintf('G  = %.4e S/m\n', G);
+fprintf('C  = %.4e F/m\n', C);
+
+fprintf('\nMATLAB calculated values:\n');
+
+fprintf('gamma = %.8f + j%.8f /m\n', ...
+    real(gamma), imag(gamma));
+
+fprintf('alpha = %.8f Np/m\n', alpha);
+
+fprintf('beta  = %.8f rad/m\n', beta);
+
+fprintf('Z0    = %.8f + j%.8f Ohm\n', ...
+    real(Z0), imag(Z0));
+
+fprintf('lambda = %.8f m\n', lambda);
+
+fprintf('\n');
+
+fprintf('Input impedance check error = %.6e Ohm\n', ...
+    Zin_error);
+
+fprintf('Load impedance check error  = %.6e Ohm\n', ...
+    abs(ZL - VL/IL));
+
+fprintf('============================================\n');
+
+
+%% =========================================================
+% 22. REFLECTION / TRANSMISSION PARAMETERS
+% ==========================================================
+
+fprintf('\n');
+fprintf('--------------------------------------------\n');
+fprintf('REFLECTION / TRANSMISSION PARAMETERS\n');
+fprintf('--------------------------------------------\n');
+
+fprintf('VSWR                    = %.6f\n', VSWR);
+
+fprintf('Return Loss             = %.6f dB\n', ...
+    Return_Loss_dB);
+
+fprintf('Voltage Transmission    = %.6f + j%.6f\n', ...
+    real(Tau_V), imag(Tau_V));
+
+
+%% =========================================================
+% 23. LOAD PARAMETERS
+% ==========================================================
+
+fprintf('\n');
+fprintf('--------------------------------------------\n');
+fprintf('LOAD PARAMETERS\n');
+fprintf('--------------------------------------------\n');
+
+fprintf('Load Voltage VL         = %.6f + j%.6f V\n', ...
+    real(VL), imag(VL));
+
+fprintf('Load Current IL         = %.6f + j%.6f A\n', ...
+    real(IL), imag(IL));
+
+
+%% =========================================================
+% 24. INPUT PARAMETERS
+% ==========================================================
+
+fprintf('\n');
+fprintf('--------------------------------------------\n');
+fprintf('INPUT PARAMETERS\n');
+fprintf('--------------------------------------------\n');
+
+fprintf('Input Voltage Vin       = %.6f + j%.6f V\n', ...
+    real(Vin), imag(Vin));
+
+fprintf('Input Current Iin       = %.6f + j%.6f A\n', ...
+    real(Iin), imag(Iin));
+
+
+%% =========================================================
+% 25. POWER PARAMETERS
+% ==========================================================
+
+fprintf('\n');
+fprintf('--------------------------------------------\n');
+fprintf('POWER PARAMETERS\n');
+fprintf('--------------------------------------------\n');
+
+fprintf('Incident Power          = %.6e W\n', ...
+    P_incident);
+
+fprintf('Reflected Power         = %.6e W\n', ...
+    P_reflected);
+
+fprintf('Load Power              = %.6e W\n', ...
+    P_load);
+
+fprintf('Power Reflection Coeff. = %.6f\n', ...
+    Power_reflection_coefficient);
+
+fprintf('Power Transmission Coeff.= %.6f\n', ...
+    Power_transmission_coefficient);
+
+
+%% =========================================================
+% 26. MATCHED LOAD TEST
+% ==========================================================
+
+ZL_matched = Z0;
+
+Gamma_matched = ...
+    (ZL_matched - Z0) / ...
+    (ZL_matched + Z0);
+
+VSWR_matched = ...
+    (1 + abs(Gamma_matched)) / ...
+    (1 - abs(Gamma_matched));
+
+fprintf('\n');
+fprintf('============================================\n');
+fprintf('           MATCHED LOAD TEST\n');
+fprintf('============================================\n');
+
+fprintf('Characteristic Z0 = %.8f + j%.8f Ohm\n', ...
+    real(Z0), imag(Z0));
+
+fprintf('Matched Load ZL    = %.8f + j%.8f Ohm\n', ...
+    real(ZL_matched), imag(ZL_matched));
+
+fprintf('Reflection Gamma   = %.8e + j%.8e\n', ...
+    real(Gamma_matched), imag(Gamma_matched));
+
+fprintf('|Gamma|            = %.8e\n', ...
+    abs(Gamma_matched));
+
+fprintf('VSWR               = %.8f\n', ...
+    VSWR_matched);
+
+fprintf('============================================\n');
+
+%% =========================================================
+% STANDING-WAVE PARAMETERS OVER FIRST FIVE WAVELENGTHS
+% ==========================================================
+
+V_magnitude_zoom = abs(V_total_zoom);
+I_magnitude_zoom = abs(I_total_zoom);
+
+V_max_zoom = max(V_magnitude_zoom);
+V_min_zoom = min(V_magnitude_zoom);
+
+I_max_zoom = max(I_magnitude_zoom);
+I_min_zoom = min(I_magnitude_zoom);
+
+VSWR_voltage_zoom = V_max_zoom / V_min_zoom;
+VSWR_current_zoom = I_max_zoom / I_min_zoom;
+
+fprintf('\n');
+fprintf('--------------------------------------------\n');
+fprintf('STANDING-WAVE ANALYSIS - FIRST FIVE WAVELENGTHS\n');
+fprintf('--------------------------------------------\n');
+
+fprintf('Vmax = %.6f V\n', V_max_zoom);
+fprintf('Vmin = %.6f V\n', V_min_zoom);
+
+fprintf('VSWR from voltage waveform = %.6f\n', ...
+    VSWR_voltage_zoom);
+
+fprintf('Imax = %.6e A\n', I_max_zoom);
+fprintf('Imin = %.6e A\n', I_min_zoom);
+
+fprintf('VSWR from current waveform = %.6f\n', ...
+    VSWR_current_zoom);
